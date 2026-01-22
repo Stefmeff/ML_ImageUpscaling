@@ -15,6 +15,7 @@ from utils import AverageMeter, calc_psnr
 
 
 if __name__ == '__main__':
+    # Parse input arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--train-file', type=str, required=True)
     parser.add_argument('--eval-file', type=str, required=True)
@@ -27,18 +28,22 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=123)
     args = parser.parse_args()
 
+    # Create output directory
     args.outputs_dir = os.path.join(args.outputs_dir, 'x{}'.format(args.scale))
 
     if not os.path.exists(args.outputs_dir):
         os.makedirs(args.outputs_dir)
 
+    # Set device
     cudnn.benchmark = True
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     torch.manual_seed(args.seed)
 
-    model = SRCNN().to(device)
-    criterion = nn.MSELoss()
+    # Initialize model, loss function, and optimizer
+    model = SRCNN().to(device)  # Define the model
+    criterion = nn.MSELoss()    # Define the loss function => Mean Squared Error
+
     optimizer = optim.Adam([
         {'params': model.conv1.parameters()},
         {'params': model.conv2.parameters()},
@@ -46,6 +51,7 @@ if __name__ == '__main__':
     ], lr=args.lr)
 
 
+    # Load train dataset
     train_dataset = TrainDataset(args.train_file)
     train_dataloader = DataLoader(dataset=train_dataset,
                                   batch_size=args.batch_size,
@@ -53,13 +59,17 @@ if __name__ == '__main__':
                                   num_workers=args.num_workers,
                                   pin_memory=True,
                                   drop_last=True)
+    
+    # Load eval dataset
     eval_dataset = EvalDataset(args.eval_file)
     eval_dataloader = DataLoader(dataset=eval_dataset, batch_size=1)
+
 
     best_weights = copy.deepcopy(model.state_dict())
     best_epoch = 0
     best_psnr = 0.0
 
+    # Train the model
     for epoch in range(args.num_epochs):
         model.train()
         epoch_losses = AverageMeter()
@@ -68,17 +78,21 @@ if __name__ == '__main__':
             t.set_description('epoch: {}/{}'.format(epoch, args.num_epochs - 1))
 
             for data in train_dataloader:
+                # Load training input and target images
                 inputs, labels = data
 
                 inputs = inputs.to(device)
                 labels = labels.to(device)
-
+                
+                # make predictions
                 preds = model(inputs)
 
+                # Compute loss
                 loss = criterion(preds, labels)
 
                 epoch_losses.update(loss.item(), len(inputs))
 
+                # Backpropagation and optimization
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -91,7 +105,9 @@ if __name__ == '__main__':
         model.eval()
         epoch_psnr = AverageMeter()
 
+
         for data in eval_dataloader:
+            # load eval input and target images
             inputs, labels = data
 
             inputs = inputs.to(device)
@@ -100,6 +116,7 @@ if __name__ == '__main__':
             with torch.no_grad():
                 preds = model(inputs).clamp(0.0, 1.0)
 
+            #evaluate performance via psnr
             epoch_psnr.update(calc_psnr(preds, labels), len(inputs))
 
         print('eval psnr: {:.2f}'.format(epoch_psnr.avg))
