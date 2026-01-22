@@ -44,6 +44,7 @@ def eval(args):
     lr_group = h5_file.create_group('lr')
     hr_group = h5_file.create_group('hr')
 
+    
     for i, image_path in enumerate(sorted(glob.glob('{}/*'.format(args.images_dir)))):
         hr = pil_image.open(image_path).convert('RGB')
         hr_width = (hr.width // args.scale) * args.scale
@@ -73,6 +74,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if not args.eval:
+        # Prepare training data
         train(args)
     else:
+        # Prepare evaluation data
         eval(args)

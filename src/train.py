@@ -45,6 +45,7 @@ if __name__ == '__main__':
         {'params': model.conv3.parameters(), 'lr': args.lr * 0.1}
     ], lr=args.lr)
 
+
     train_dataset = TrainDataset(args.train_file)
     train_dataloader = DataLoader(dataset=train_dataset,
                                   batch_size=args.batch_size,
