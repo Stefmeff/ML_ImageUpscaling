@@ -9,10 +9,12 @@ from utils import convert_rgb_to_y
 def train(args):
     h5_file = h5py.File(args.output_path, 'w')
 
-    lr_patches = []
-    hr_patches = []
+    lr_patches = [] # Low-resolution patches
+    hr_patches = [] # High-resolution patches
 
-    for image_path in sorted(glob.glob('{}/*'.format(args.images_dir))):
+    # Load num-images
+    for image_path in sorted(glob.glob('{}/*'.format(args.images_dir)))[:args.num_images]:
+        # Generate low-resolution and high-resolution image pairs
         hr = pil_image.open(image_path).convert('RGB')
         hr_width = (hr.width // args.scale) * args.scale
         hr_height = (hr.height // args.scale) * args.scale
@@ -44,8 +46,8 @@ def eval(args):
     lr_group = h5_file.create_group('lr')
     hr_group = h5_file.create_group('hr')
 
-    
-    for i, image_path in enumerate(sorted(glob.glob('{}/*'.format(args.images_dir)))):
+    for i, image_path in enumerate(sorted(glob.glob('{}/*'.format(args.images_dir)))[:args.num_images]):
+        # Generate low-resolution and high-resolution image pairs
         hr = pil_image.open(image_path).convert('RGB')
         hr_width = (hr.width // args.scale) * args.scale
         hr_height = (hr.height // args.scale) * args.scale
@@ -66,6 +68,7 @@ def eval(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--images-dir', type=str, required=True)
+    parser.add_argument('--num-images', type=int, default=1000)
     parser.add_argument('--output-path', type=str, required=True)
     parser.add_argument('--patch-size', type=int, default=33)
     parser.add_argument('--stride', type=int, default=14)
