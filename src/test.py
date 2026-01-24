@@ -4,15 +4,18 @@ import torch
 import torch.backends.cudnn as cudnn
 import numpy as np
 import PIL.Image as pil_image
+import glob
+import os
+from pathlib import Path
 
 from models import SRCNN
-from utils import convert_rgb_to_ycbcr, convert_ycbcr_to_rgb, calc_psnr
+from utils import convert_rgb_to_ycbcr, convert_ycbcr_to_rgb, calc_psnr, calc_l2_norm
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights-file', type=str, required=True)
-    parser.add_argument('--image-file', type=str, required=True)
+    parser.add_argument('--images-dir', type=str, required=True)
     parser.add_argument('--scale', type=int, default=3)
     args = parser.parse_args()
 
@@ -29,33 +32,73 @@ if __name__ == '__main__':
             raise KeyError(n)
 
     model.eval()
+    
 
-    image = pil_image.open(args.image_file).convert('RGB')
+    os.makedirs("outputs/scaled_down", exist_ok=True)
+    os.makedirs("outputs/scaled_up", exist_ok=True)
+    
+    max_save = 10
+    psnrs = []
+    l2_norms = []
+    for i, image_path in enumerate(sorted(glob.glob('{}/*'.format(args.images_dir)))):
+        image = pil_image.open(image_path).convert('RGB')
+        input_np = np.array(image).astype(np.float32)
 
-    image_width = (image.width // args.scale) * args.scale
-    image_height = (image.height // args.scale) * args.scale
-    image = image.resize((image_width, image_height), resample=pil_image.BICUBIC)
-    image = image.resize((image.width // args.scale, image.height // args.scale), resample=pil_image.BICUBIC)
-    image = image.resize((image.width * args.scale, image.height * args.scale), resample=pil_image.BICUBIC)
-    image.save(args.image_file.replace('.', '_bicubic_x{}.'.format(args.scale)))
+        image_width = (image.width // args.scale) * args.scale
+        image_height = (image.height // args.scale) * args.scale
+        image = image.resize((image_width, image_height), resample=pil_image.BICUBIC)
+        image = image.resize((image.width // args.scale, image.height // args.scale), resample=pil_image.BICUBIC)
+        image = image.resize((image.width * args.scale, image.height * args.scale), resample=pil_image.BICUBIC)
+        #image.save(args.image_file.replace('.', '_bicubic_x{}.'.format(args.scale)))
 
-    image = np.array(image).astype(np.float32)
-    ycbcr = convert_rgb_to_ycbcr(image)
+        image_np = np.array(image).astype(np.float32)
+        ycbcr = convert_rgb_to_ycbcr(image_np)
 
-    y = ycbcr[..., 0]
-    y /= 255.
-    y = torch.from_numpy(y).to(device)
-    y = y.unsqueeze(0).unsqueeze(0)
+        y = ycbcr[..., 0]
+        y /= 255.
+        y = torch.from_numpy(y).to(device)
+        y = y.unsqueeze(0).unsqueeze(0)
 
-    with torch.no_grad():
-        preds = model(y).clamp(0.0, 1.0)
+        with torch.no_grad():
+            preds = model(y).clamp(0.0, 1.0)
 
-    psnr = calc_psnr(y, preds)
-    print('PSNR: {:.2f}'.format(psnr))
+        psnr = calc_psnr(y, preds)
+        print('PSNR: {:.2f}'.format(psnr))
+        psnrs.append(psnr)
+        
 
-    preds = preds.mul(255.0).cpu().numpy().squeeze(0).squeeze(0)
+        preds = preds.mul(255.0).cpu().numpy().squeeze(0).squeeze(0)
+        
 
-    output = np.array([preds, ycbcr[..., 1], ycbcr[..., 2]]).transpose([1, 2, 0])
-    output = np.clip(convert_ycbcr_to_rgb(output), 0.0, 255.0).astype(np.uint8)
-    output = pil_image.fromarray(output)
-    output.save(args.image_file.replace('.', '_srcnn_x{}.'.format(args.scale)))
+        output = np.array([preds, ycbcr[..., 1], ycbcr[..., 2]]).transpose([1, 2, 0])
+        output = np.clip(convert_ycbcr_to_rgb(output), 0.0, 255.0).astype(np.uint8)
+        
+        l2_norm = calc_l2_norm(input_np, output)
+        print('L2 Norm: {:.2f}'.format(l2_norm))
+        l2_norms.append(l2_norm)
+        
+        output = pil_image.fromarray(output)
+        #output.save(args.image_path.replace('.', '_srcnn_x{}.'.format(args.scale)))
+        
+        
+        if i < max_save:
+            bicubic_path = Path("outputs/scaled_down") / f"{Path(image_path).stem}_bicubic_x{args.scale}{Path(image_path).suffix}"
+            image.save(bicubic_path)
+        
+            srcnn_path = Path("outputs/scaled_up") / f"{Path(image_path).stem}_srcnn_x{args.scale}{Path(image_path).suffix}"
+            output.save(srcnn_path)
+    
+    psrns_arr = np.array(psnrs)
+    avg_psnr = np.mean(psrns_arr)
+    print('avg PSNR: {:.2f}'.format(avg_psnr))
+    
+    l2_norms_arr = np.array(l2_norms)
+    avg_l2_norm = np.mean(l2_norms_arr)
+    print('avg L2 Norm: {:.2f}'.format(avg_l2_norm))
+    
+    
+    
+    
+    
+    
+    
